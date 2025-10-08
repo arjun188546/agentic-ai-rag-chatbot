@@ -87,7 +87,7 @@ Result: Up-to-date information from the web
 | **n8n** | Visual workflows (easier than coding complex logic) |
 | **TypeScript** | Catch errors before users do |
 | **18-Factor Scoring** | Better than simple keyword matching |
-| **Apple-Style UI** | Clean, professional, familiar |
+| **Stylish UI** | Clean, professional, familiar |
 
 ### Knowledge Base Design
 - **12 Documents**: Sweet spot for speed vs coverage
@@ -104,11 +104,8 @@ Result: Up-to-date information from the web
 ## ⚠️ Known Limitations
 
 ### What It Can't Do (Yet)
-- **Memory**: Doesn't remember previous conversations
 - **File Upload**: Only works with pre-loaded documents
 - **Voice**: Text only (no audio input/output)
-- **Multiple Languages**: English prompts and documents only
-- **Real-time**: No live data streaming
 
 ### Size Limits
 - **Documents**: Works best with 8-20 documents (performance drops after 50)
@@ -164,7 +161,6 @@ MAX_RESULTS=5                          # Max search results per query
 
 ## 📖 More Documentation
 
-- **[Complete Setup Guide](docs/n8n-workflow-setup-guide.md)** - Detailed installation
 - **[Architecture Deep Dive](docs/n8n-workflow-architecture.md)** - How it all works
 - **[Project Overview](docs/project-overview.md)** - Full feature list
 - **[Deployment Guide](docs/deployment-guide.md)** - Production setup
@@ -180,6 +176,5 @@ Ready to customize? You can:
 
 ---
 
-**Built with ❤️ for intelligent document search and real-time web integration**
 
 
