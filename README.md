@@ -1,6 +1,6 @@
 # 🤖 RAG - Agentic AI Chatbot
 
-A smart AI chatbot that automatically decides whether to answer from its knowledge base or search the web. Think ChatGPT but with intelligent routing to your own documents.
+An intelligent AI chatbot that uses **LLM-powered decision making** to automatically route queries. It decides whether to summarize knowledge base documents or search the web using Travily API based on relevance scores.
 
 ## ⚡ Quick Setup (5 minutes)
 
@@ -11,12 +11,14 @@ npm install
 
 # Setup environment
 cp .env.example .env.local
-# Edit .env.local and add your OpenAI API key
+# Edit .env.local and add your API keys:
+# - OPENAI_API_KEY=sk-your-openai-key
+# - N8N_WEBHOOK_URL=http://localhost:5678/webhook-test/chat
 
 # Start the chat interface
 npm run dev
 ```
-➡️ Open `http://localhost:3000` - you'll see the chat interface
+➡️ Open `http://localhost:3000` - you'll see the Apple-inspired chat interface
 
 ### 2. Setup n8n Backend
 ```bash
@@ -28,33 +30,47 @@ n8n start
 ```
 ➡️ Open `http://localhost:5678` - you'll see the n8n dashboard
 
-### 3. Import Workflow
-1. In n8n dashboard, click **"Import from File"**
-2. Upload workflow from `docs/` folder
-3. Add your OpenAI API key in workflow settings
-4. Click **"Activate"** to start the workflow
+### 3. Configure n8n Workflow
+1. **Create nodes** as shown in the workflow diagram
+2. **Add OpenAI credentials** for LLM routing decisions
+3. **Configure Travily API** for web search capabilities  
+4. **Set webhook URL** to match your frontend
+5. **Activate workflow** to start intelligent routing
 
-### 4. Test It
-- **Knowledge question**: "What is machine learning?"
-- **Current question**: "Latest AI news today"
+### 4. Test the Intelligence
+- **High score query**: "What is machine learning?" → **KB Summarization**
+- **Low score query**: "Latest AI news today" → **Travily Web Search**
 
-✅ **Done!** The system will automatically choose knowledge base or web search.
+✅ **Done!** The LLM will intelligently decide the best path for each query.
 
-## 🧠 How It Works (Simple Explanation)
+## 🧠 How It Works (LLM-Powered Intelligence)
 
 ```
 You ask: "What is AI?" 
     ↓
-System checks: "Do I have good docs about AI?"
-    ↓                              ↓
-   YES → Fast answer            NO → Search web
-   from my documents            for current info
+Knowledge Base Search: Score = 85 (high relevance)
+    ↓
+LLM Decision Engine: "Score >= 50, use KB summarization"
+    ↓
+Result: Fast, comprehensive answer from knowledge base
 ```
 
-**The Magic**: It automatically decides based on:
-- How well your documents match the question (0-100 score)
-- Whether you're asking about current events
-- What type of question it is (tutorial, facts, comparison)
+```
+You ask: "Latest tech news today"
+    ↓  
+Knowledge Base Search: Score = 15 (low relevance)
+    ↓
+LLM Decision Engine: "Score < 50, use web search"
+    ↓
+Travily API Search: Current web results → LLM processing
+    ↓
+Result: Up-to-date information from the web
+```
+
+**The Intelligence**: An LLM analyzes the knowledge base score and makes routing decisions:
+- **Score ≥ 50**: KB Summarization (fast, accurate for covered topics)
+- **Score < 50**: Travily Web Search (current, comprehensive external info)
+- **Confidence scoring**: LLM provides reasoning for each decision
 
 ## 🏗️ Design Decisions (Why We Built It This Way)
 

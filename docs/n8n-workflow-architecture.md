@@ -1,173 +1,205 @@
-# n8n Workflow Architecture Documentation
+# n8n Workflow Architecture - LLM Decision Engine
 
 ## Overview
 
-This document describes the complete n8n workflow architecture for the Agentic AI Chatbot system. The workflow implements an intelligent routing system that dynamically decides between knowledge base retrieval and web search based on query analysis.
+This document describes the **LLM-powered n8n workflow** for the Agentic AI Chatbot system. The workflow uses OpenAI models to make intelligent routing decisions based on knowledge base scores, replacing simple conditional logic with AI reasoning.
 
-## Workflow Architecture
+## Current Workflow Architecture (LLM-Based)
 
-The workflow consists of 6 main components connected in a branching pattern that enables intelligent decision-making and parallel processing paths.
+The workflow consists of **7 intelligent nodes** that create an adaptive decision-making system:
+
+```
+Webhook → Controller → Message a Model2 → Switch → [KB Summarizer | Search → Message a Model1] → Response Formatter → Respond to Webhook
+```
 
 ## Node-by-Node Breakdown
 
-### 1. Webhook (Entry Point)
-**Type**: Webhook Trigger
-**Purpose**: Receives incoming chat requests from the Next.js frontend
-**Position**: Entry point of the workflow
+### 1. **Webhook** (Entry Point)
+**Type**: Webhook Trigger  
+**URL**: `/webhook-test/chat`  
+**Purpose**: Receives chat requests from Next.js frontend
+
+**Input Data**:
+```json
+{
+  "message": "user query",
+  "conversationHistory": [],
+  "knowledgeContext": [...],
+  "searchMetadata": {
+    "topScore": 85
+  }
+}
+```
+
+### 2. **Controller** (Data Preparation)
+**Type**: Code Node  
+**Purpose**: Processes webhook data and prepares for LLM decision
 
 **Function**:
-- Listens for POST requests from the frontend chat API
-- Receives user messages and conversation context
-- Triggers the entire workflow execution
-- Configured to respond using the "Respond to Webhook" node
+- Extracts query and knowledge base score
+- Formats data structure for LLM consumption
+- Prepares context for intelligent routing decision
 
-**Input Data Structure**:
-- User message text
-- Conversation history
-- Session information
-- Knowledge context from frontend
+### 3. **Message a Model2** (LLM Decision Engine) 🧠
+**Type**: OpenAI Chat Model  
+**Model**: GPT-4  
+**Purpose**: **Intelligent routing decision based on KB score**
 
-### 2. Controller (Decision Logic)
-**Type**: Code Node
-**Purpose**: Analyzes incoming requests and determines processing path
-**Position**: First processing node after webhook
+**Decision Prompt**:
+```
+Query: {{ $json.body.message }}
+KB Score: {{ $json.body.searchMetadata.topScore }}
 
-**Function**:
-- Processes the incoming webhook data
-- Performs query analysis and intent detection
-- Determines whether to use knowledge base or web search
-- Sets up routing flags for downstream nodes
-- Prepares data for both processing branches
+Decision: If score < 50 use "web_search", if score >= 50 use "kb_summarize"
 
-**Key Responsibilities**:
-- Query preprocessing and normalization
-- Intent classification (factual, current events, technical, etc.)
-- Confidence scoring for routing decisions
-- Data structure preparation for downstream nodes
+Return ONLY this JSON format:
+{
+  "route": "web_search" or "kb_summarize",
+  "confidence": 80-95,
+  "reasoning": "KB score [actual_score] [below/above] 50 threshold"
+}
+```
 
-### 3. If Node (Routing Decision)
-**Type**: If/Conditional Logic
-**Purpose**: Routes requests to appropriate processing branch
-**Position**: Central branching point
+**Output**: JSON decision with route, confidence, and reasoning
 
-**Function**:
-- Evaluates routing conditions set by the Controller
-- Creates two execution paths: "true" and "false"
-- True path: High-confidence knowledge base queries
-- False path: Low-confidence queries requiring web search
+### 4. **Switch** (Dynamic Router)
+**Type**: Switch Node  
+**Mode**: Expression  
+**Purpose**: Routes based on LLM decision
 
-**Routing Logic**:
-- **True Branch**: Knowledge base has relevant information
-- **False Branch**: Web search needed for current/external information
+**Expression**:
+```javascript
+{{ JSON.parse($('Message a model2').item.json.content).route === "web_search" ? 0 : 1 }}
+```
 
-### 4A. Message a Model (Knowledge Path)
-**Type**: OpenAI/LLM Integration
-**Purpose**: Processes queries using knowledge base context
-**Position**: True branch of If node
+**Routing**:
+- **Output 0**: `web_search` → Search + Message a Model1
+- **Output 1**: `kb_summarize` → Message a Model1 (KB path)
+
+### 5A. **Search** (Web Search Path)
+**Type**: HTTP Request / Search Integration  
+**Purpose**: Travily API web search for low-score queries
+**Trigger**: When route = "web_search"
 
 **Function**:
-- Receives queries with high knowledge base confidence
-- Uses retrieved documents as context for LLM processing
-- Generates responses based on stored knowledge
-- Optimized for factual, educational, and technical queries
+- Executes web search using Travily API
+- Retrieves current, external information
+- Handles real-time data requirements
 
-**Processing Characteristics**:
-- Uses knowledge base documents as primary context
-- Faster response times due to pre-indexed content
-- Higher accuracy for topics covered in knowledge base
-- No external API calls required beyond LLM
+### 5B. **Message a Model1** (Dual-Purpose Processor)
+**Type**: OpenAI Chat Model  
+**Model**: GPT-4  
+**Purpose**: **Processes both KB summarization AND web search results**
 
-### 4B. Search Node (Web Search Path)
-**Type**: Query Search Integration
-**Purpose**: Performs web search for current information
-**Position**: False branch of If node
+**KB Summarization Path** (route = "kb_summarize"):
+```
+Query: {{ $json.message }}
+KB Documents: {{ JSON.stringify($json.knowledgeContext) }}
 
-**Function**:
-- Executes web searches for queries requiring current information
-- Retrieves real-time data from external sources
-- Handles time-sensitive and current event queries
-- Provides up-to-date information not in knowledge base
+Since KB score >= 50, summarize and enrich the knowledge base results.
+Provide a comprehensive answer based on the available knowledge.
+```
 
-**Processing Characteristics**:
-- Accesses live web data
-- Handles current events and recent developments
-- Longer response times due to external API calls
-- Broader information scope beyond knowledge base
+**Web Search Path** (route = "web_search"):
+```
+Query: {{ $json.message }}
+Search Results: {{ JSON.stringify($json) }}
 
-### 4C. Message a Model1 (Web Search Processing)
-**Type**: OpenAI/LLM Integration
-**Purpose**: Processes web search results with LLM reasoning
-**Position**: Follows Search node in false branch
+Process the web search results and provide a comprehensive answer.
+```
+
+### 6. **Response Formatter** (Output Standardization)
+**Type**: Code Node  
+**Purpose**: Formats responses for frontend consumption
 
 **Function**:
-- Receives web search results from Search node
-- Combines search data with LLM reasoning capabilities
-- Generates responses based on current web information
-- Synthesizes multiple search sources into coherent answers
+- Standardizes response structure from both paths
+- Adds processing metadata and timing information
+- Includes LLM decision reasoning in response
 
-**Processing Characteristics**:
-- Uses web search results as primary context
-- Processes real-time information
-- Handles complex synthesis of multiple sources
-- Optimized for current events and trending topics
+### 7. **Respond to Webhook** (Final Output)
+**Type**: Webhook Response  
+**Purpose**: Returns formatted response to frontend
 
-### 5. Response Formatter (Output Processing)
-**Type**: Code Node
-**Purpose**: Standardizes and formats all responses
-**Position**: Convergence point from both branches
-
-**Function**:
-- Receives responses from both knowledge base and web search paths
-- Standardizes response format for frontend consumption
-- Adds metadata and processing information
-- Prepares final JSON structure for webhook response
-
-**Output Standardization**:
-- Consistent response structure regardless of processing path
-- Metadata about processing steps and tools used
-- Error handling and fallback response formatting
-- Performance metrics and timing information
-
-### 6. Respond to Webhook (Output)
-**Type**: Webhook Response
-**Purpose**: Returns processed response to frontend
-**Position**: Final node in workflow
-
-**Function**:
-- Sends the formatted response back to the Next.js frontend
-- Completes the request-response cycle
-- Ensures proper HTTP response formatting
-- Handles response timing and error cases
+**Response Structure**:
+```json
+{
+  "response": "LLM generated answer",
+  "steps": ["Query analyzed", "LLM routing decision", "Processing completed"],
+  "toolCalls": ["llm_decision", "kb_summarize|web_search", "llm_processing"],
+  "latency": 2500,
+  "success": true,
+  "metadata": {
+    "processingPath": "kb_summarize|web_search",
+    "kbScore": 85,
+    "llmReasoning": "KB score 85 exceeds threshold..."
+  }
+}
+```
 
 ## Data Flow Architecture
 
-### Input Flow
-1. **Frontend** → **Webhook**: User query with context
-2. **Webhook** → **Controller**: Raw request data
-3. **Controller** → **If Node**: Processed data with routing flags
+### 🔄 **Complete Flow Diagram**
+```
+Frontend Query → Webhook → Controller → LLM Decision → Switch Router → [Path Execution] → Response
+```
 
-### Branching Flow
-4a. **If Node (True)** → **Message a Model**: Knowledge base queries
-4b. **If Node (False)** → **Search** → **Message a Model1**: Web search queries
+### **Input Flow**
+1. **Frontend** → **Webhook**: User query + KB context + score
+2. **Webhook** → **Controller**: Data preparation and formatting  
+3. **Controller** → **Message a Model2**: LLM decision-making
 
-### Output Flow
-5. **Both Paths** → **Response Formatter**: Standardized formatting
-6. **Response Formatter** → **Respond to Webhook**: Final response
-7. **Respond to Webhook** → **Frontend**: Completed response
+### **Decision Flow** 🧠
+4. **Message a Model2**: LLM analyzes score and returns routing decision
+5. **Switch**: Dynamically routes based on LLM output
 
-## Processing Paths
+### **Execution Paths**
+**Path A (web_search)**:
+6A. **Switch** → **Search** → **Message a Model1** → **Response Formatter**
 
-### Knowledge Base Path (True Branch)
-- **Trigger**: High confidence in knowledge base relevance
-- **Process**: Controller → If (True) → Message a Model → Response Formatter → Respond to Webhook
-- **Use Cases**: Educational content, technical documentation, fundamental concepts
-- **Advantages**: Fast response, high accuracy for covered topics
+**Path B (kb_summarize)**:  
+6B. **Switch** → **Message a Model1** → **Response Formatter**
 
-### Web Search Path (False Branch)
-- **Trigger**: Low confidence in knowledge base relevance
-- **Process**: Controller → If (False) → Search → Message a Model1 → Response Formatter → Respond to Webhook
-- **Use Cases**: Current events, recent developments, real-time information
-- **Advantages**: Access to current information, broader knowledge scope
+### **Output Flow**
+7. **Response Formatter** → **Respond to Webhook** → **Frontend**
+
+## Processing Paths Comparison
+
+### 🔍 **Web Search Path** (Score < 50)
+- **Trigger**: LLM decides score is insufficient for KB
+- **Process**: Switch → Search → Message a Model1 → Response Formatter
+- **Use Cases**: Current events, news, recent developments, external information
+- **Advantages**: Access to real-time data, broader information scope
+- **Response Time**: 3-8 seconds (external API calls)
+
+### 📚 **Knowledge Base Path** (Score ≥ 50)  
+- **Trigger**: LLM decides KB has sufficient relevance
+- **Process**: Switch → Message a Model1 → Response Formatter
+- **Use Cases**: Educational content, technical documentation, covered topics
+- **Advantages**: Fast response, high accuracy, consistent quality
+- **Response Time**: 1-3 seconds (local processing)
+
+## 🆕 **LLM Decision Engine Benefits**
+
+### **Intelligence Over Rules**
+- **Old**: Simple threshold checking (`if score > 50`)
+- **New**: AI reasoning with context and confidence scoring
+- **Result**: More nuanced, adaptive decision-making
+
+### **Transparency**  
+- **Decision Reasoning**: LLM explains why it chose each path
+- **Confidence Scoring**: Provides confidence levels for decisions
+- **Debugging**: Easy to understand routing logic through LLM explanations
+
+### **Adaptability**
+- **Dynamic Thresholds**: LLM can adjust based on query context
+- **Context Awareness**: Considers query type, complexity, and intent
+- **Learning**: Can be improved by updating prompts without code changes
+
+### **Quality Assurance**
+- **Consistent Format**: JSON output ensures reliable parsing
+- **Error Handling**: LLM provides fallback reasoning
+- **Monitoring**: Decision metadata tracked in response
 
 ## Integration Points
 
@@ -216,22 +248,54 @@ The workflow consists of 6 main components connected in a branching pattern that
 
 ## Configuration Requirements
 
-### Environment Variables
-- OpenAI API keys for LLM processing
-- Web search API credentials
-- Knowledge base API endpoints
-- Timeout and performance settings
+### **Environment Variables**
+```bash
+# OpenAI Configuration
+OPENAI_API_KEY=sk-your-openai-key-here
+OPENAI_ORG_ID=org-your-org-id
 
-### Node Configuration
-- Webhook endpoint and authentication settings
-- LLM model selection and parameters
-- Search API configuration and limits
-- Response formatting and error handling
+# n8n Webhook
+N8N_WEBHOOK_URL=http://localhost:5678/webhook-test/chat
 
-### Security Considerations
-- API key management and rotation
-- Input validation and sanitization
-- Rate limiting and abuse prevention
-- Secure communication protocols
+# Travily API (for web search)
+TRAVILY_API_KEY=your-travily-api-key
+TRAVILY_BASE_URL=https://api.travily.com
 
-This architecture provides a robust, intelligent, and scalable foundation for the agentic AI chatbot system, enabling both rapid knowledge retrieval and comprehensive web search capabilities through a single, unified interface.
+# Performance Settings
+API_TIMEOUT=30000
+LLM_TEMPERATURE=0.1
+MAX_RESULTS=5
+```
+
+### **Node Configuration Summary**
+
+| Node | Type | Key Settings |
+|------|------|-------------|
+| **Message a Model2** | OpenAI Chat | Model: GPT-4, Temp: 0.1, Decision prompts |
+| **Switch** | Switch | Expression mode, JSON parsing |
+| **Search** | HTTP Request | Travily API integration |
+| **Message a Model1** | OpenAI Chat | Model: GPT-4, Dual-purpose processing |
+
+### **Security Considerations**
+- **API Key Management**: Use environment variables, rotate regularly
+- **Input Validation**: Sanitize all user inputs before processing  
+- **Rate Limiting**: Monitor OpenAI and Travily API usage
+- **Error Handling**: Graceful degradation for API failures
+- **Logging**: Comprehensive logs for debugging without exposing secrets
+
+## Migration from Simple Routing
+
+### **What Changed**
+- ❌ **Removed**: Simple If node with hardcoded threshold
+- ✅ **Added**: LLM-powered decision engine with reasoning
+- ✅ **Enhanced**: Context-aware routing with confidence scoring
+- ✅ **Improved**: Travily API integration for better web search
+
+### **Migration Steps**
+1. **Replace If Node** → Add Message a Model2 (LLM Decision)
+2. **Add Switch Node** → Configure expression-based routing
+3. **Update Prompts** → Install decision-making prompts
+4. **Configure APIs** → Add Travily API credentials
+5. **Test Routing** → Validate both paths work correctly
+
+This LLM-powered architecture provides intelligent, adaptive, and transparent routing decisions that improve over time through prompt refinement rather than code changes.

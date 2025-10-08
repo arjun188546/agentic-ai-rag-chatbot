@@ -1,21 +1,32 @@
-# Agentic AI Chatbot Project Documentation
+# Agentic AI Chatbot - LLM Decision Engine Project
 
 ## What is this?
-A smart chatbot that automatically decides whether to answer from its knowledge base or search the web, built with Next.js frontend and n8n backend workflows.
+An intelligent chatbot that uses **LLM-powered decision making** to automatically route queries between knowledge base summarization and web search using Travily API. Built with Next.js frontend and n8n workflow automation.
 
-## Architecture Overview
+## 🧠 LLM-Powered Architecture
 
 ```
-User Question → Frontend → n8n Workflow → AI Response
-                    ↓
-            [Decision Logic]
-                ↙        ↘
-    Knowledge Base    Web Search
-        Path             Path
-                ↘        ↙
-            [Response Formatter]
-                    ↓
-                Final Answer
+User Question → Frontend KB Search → n8n LLM Decision Engine → AI Response
+                      ↓                         ↓
+                 Score: 85               Score ≥ 50? 
+                      ↓                         ↓
+              [LLM Analyzes Score]         [Route Decision]
+                      ↓                    ↙           ↘
+              "Use KB Summarization"   KB Path      Web Path
+                      ↓                    ↓            ↓
+              Message a Model1       Summarize    Travily Search
+                      ↓                    ↘            ↙
+              [Response Formatter] ← ← ← ← ← ← ← ← ← ← ←
+                      ↓
+                 Final Answer
+```
+
+## Current Workflow (7 Nodes)
+
+```
+1. Webhook → 2. Controller → 3. Message a Model2 (LLM Decision) → 
+4. Switch → [5A. Search + 5B. Message a Model1] OR [5B. Message a Model1] →
+6. Response Formatter → 7. Respond to Webhook
 ```
 
 ## Project Structure
@@ -31,42 +42,49 @@ rag/
 └── package.json           # Dependencies
 ```
 
-## How It Works
+## How It Works (LLM Intelligence)
 
-### 1. Frontend (Next.js)
-- **Chat Interface**: User types questions
-- **API Layer**: Handles requests and responses
-- **Knowledge Search**: Searches local documents with 18-factor scoring
-- **Smart Routing**: Decides between knowledge base and web search
+### 1. Frontend (Next.js) - Simplified
+- **Chat Interface**: Apple-inspired professional design
+- **KB Search**: 18-factor scoring system (TF-IDF, BM25, Cosine Similarity)  
+- **Score Generation**: Returns 0-100 relevance score
+- **Clean API**: Sends score + context to n8n for LLM decision
 
-### 2. Backend (n8n Workflow)
-- **Webhook**: Receives chat requests
-- **Controller**: Analyzes question intent
-- **If Node**: Routes to appropriate path
-- **LLM Processing**: Generates AI responses
-- **Response Formatter**: Standardizes output
+### 2. n8n Workflow - LLM-Powered
+- **Webhook**: Receives requests with KB scores
+- **Controller**: Data preparation for LLM
+- **Message a Model2**: **🧠 LLM Decision Engine** (GPT-4)
+  - Analyzes KB score vs 50 threshold
+  - Returns route decision with reasoning
+  - Provides confidence scoring
+- **Switch**: Dynamic routing based on LLM output
+- **Processing Paths**: KB summarization OR Travily web search
+- **Response Formatter**: Standardizes output with decision metadata
 
-### 3. Knowledge Base
-- **12 Documents**: AI, ML, Cloud, Security, Web Dev, etc.
-- **Smart Search**: TF-IDF scoring, semantic matching
-- **Instant Results**: Pre-indexed for fast retrieval
+### 3. Decision Intelligence
+- **Score ≥ 50**: LLM decides "kb_summarize" → Fast, accurate answers
+- **Score < 50**: LLM decides "web_search" → Current, comprehensive info
+- **Reasoning**: LLM explains each decision for transparency
+- **Adaptability**: Easy to modify decision logic via prompts
 
 ## Key Features
 
-### Intelligent Routing
-- **High Confidence**: Uses knowledge base (fast, accurate)
-- **Low Confidence**: Uses web search (current, comprehensive)
-- **Automatic Decision**: No manual switching needed
+### 🧠 **LLM Decision Engine**
+- **Intelligent Routing**: GPT-4 analyzes scores and makes routing decisions
+- **Confidence Scoring**: LLM provides confidence levels for each decision
+- **Reasoning**: Transparent explanations for why each path was chosen
+- **Adaptable**: Modify decision logic through prompt updates, not code
 
-### Advanced Search
-- **18 Scoring Factors**: TF-IDF, semantic similarity, headers, code blocks
-- **Normalized Scores**: 0-100 scale for easy understanding
-- **Query Expansion**: Automatically adds related terms
+### 🔄 **Dual Processing Paths**  
+- **KB Summarization** (Score ≥ 50): Fast, accurate answers from knowledge base
+- **Travily Web Search** (Score < 50): Current, comprehensive external information
+- **Unified Interface**: Same Message a Model1 handles both paths intelligently
 
-### Production Ready
-- **Error Handling**: Graceful fallbacks
-- **Performance**: Optimized for speed
-- **Scalable**: Easy to add more knowledge documents
+### ⚡ **Performance Optimized**
+- **Simplified Backend**: Removed complex detection algorithms (400+ lines)
+- **Score-Based**: Clean numerical threshold decision making
+- **Response Times**: 1-3s (KB) vs 3-8s (Web) with clear user expectations
+- **Error Handling**: Graceful fallbacks with LLM reasoning
 
 ## Quick Start
 
