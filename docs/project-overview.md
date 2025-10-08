@@ -7,18 +7,18 @@ An intelligent chatbot that uses **LLM-powered decision making** to automaticall
 
 ```
 User Question → Frontend KB Search → n8n LLM Decision Engine → AI Response
-                      ↓                         ↓
-                 Score: 85               Score ≥ 50? 
-                      ↓                         ↓
-              [LLM Analyzes Score]         [Route Decision]
-                      ↓                    ↙           ↘
-              "Use KB Summarization"   KB Path      Web Path
-                      ↓                    ↓            ↓
-              Message a Model1       Summarize    Travily Search
-                      ↓                    ↘            ↙
-              [Response Formatter] ← ← ← ← ← ← ← ← ← ← ←
-                      ↓
-                 Final Answer
+                                               ↓
+                                    Score ≥ 50? or score < 50
+                                                ↓
+                                        [Route Decision]
+                                            ↙           ↘
+                                         KB Path      Web Path
+                                          ↓            ↓
+                                    Summarize    Travily Search
+                                           ↘            ↙
+                                        [Response Formatter]
+                                                  ↓
+                                             Final Answer
 ```
 
 ## Current Workflow (7 Nodes)
