@@ -49,15 +49,21 @@ Webhook → Controller → Message a Model2 → Switch → [KB Summarizer | Sear
 ```
 Query: {{ $json.body.message }}
 KB Score: {{ $json.body.searchMetadata.topScore }}
+KB Documents: {{ $json.body.knowledgeContext[0] }}
 
-Decision: If score < 50 use "web_search", if score >= 50 use "kb_summarize"
+Decision Rules:
+- KB Score < 50
+- KB Score >= 50
 
-Return ONLY this JSON format:
-{
-  "route": "web_search" or "kb_summarize",
-  "confidence": 80-95,
-  "reasoning": "KB score [actual_score] [below/above] 50 threshold"
-}
+Return the output as web_search or kb_search 
+
+If score < 50:
+  web_search
+
+If score >= 50:
+  kb_summarize
+
+Analyze the KB score and return the response
 ```
 
 **Output**: JSON decision with route, confidence, and reasoning
@@ -283,19 +289,5 @@ MAX_RESULTS=5
 - **Error Handling**: Graceful degradation for API failures
 - **Logging**: Comprehensive logs for debugging without exposing secrets
 
-## Migration from Simple Routing
-
-### **What Changed**
-- ❌ **Removed**: Simple If node with hardcoded threshold
-- ✅ **Added**: LLM-powered decision engine with reasoning
-- ✅ **Enhanced**: Context-aware routing with confidence scoring
-- ✅ **Improved**: Travily API integration for better web search
-
-### **Migration Steps**
-1. **Replace If Node** → Add Message a Model2 (LLM Decision)
-2. **Add Switch Node** → Configure expression-based routing
-3. **Update Prompts** → Install decision-making prompts
-4. **Configure APIs** → Add Travily API credentials
-5. **Test Routing** → Validate both paths work correctly
 
 This LLM-powered architecture provides intelligent, adaptive, and transparent routing decisions that improve over time through prompt refinement rather than code changes.
