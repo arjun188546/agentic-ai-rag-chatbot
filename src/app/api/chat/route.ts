@@ -75,11 +75,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
 
     console.log(`[Chat API] Processing: "${body.message.substring(0, 50)}..."`);
 
-    // 📚 STEP 1: Dynamic Knowledge Base Detection
-    const detectionResult = await detectKnowledgeBaseRelevance(body.message);
+    // 📚 STEP 1: Simple Knowledge Base Search
+    const searchResults = await searchKnowledgeBase(body.message);
+    const topScore = searchResults.length > 0 ? searchResults[0].searchScore || 0 : 0;
     
-    console.log(`[Chat API] KB Detection: ${detectionResult.reason}`);
-    console.log(`[Chat API] Should use KB: ${detectionResult.shouldUseKB}, Confidence: ${detectionResult.confidence.toFixed(1)}`);
+    console.log(`[Chat API] KB Search completed. Top score: ${topScore}`);
 
     // 📤 STEP 2: Send Context + Message to n8n
     const n8nPayload: N8nPayload = {
@@ -87,12 +87,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       conversationHistory: body.conversationHistory || [],
       timestamp: new Date().toISOString(),
       sessionId: generateSessionId(request),
-      knowledgeContext: detectionResult.topDocuments, // Send detected documents
+      knowledgeContext: searchResults.slice(0, 3), // Send top 3 documents
       searchMetadata: {
         documentsSearched: await getTotalDocuments(),
-        resultsFound: detectionResult.topDocuments.length,
+        resultsFound: searchResults.length,
         searchTime: Date.now() - startTime,
-        topScore: detectionResult.topDocuments.length > 0 ? detectionResult.topDocuments[0].searchScore || 0 : 0
+        topScore: topScore
       }
     };
 
@@ -190,22 +190,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
         latency: latency,
         success: true,
         metadata: {
-          contextSource: 'dynamic_kb_detection',
-          documentsUsed: detectionResult.topDocuments.length,
+          contextSource: 'simple_kb_search',
+          documentsUsed: searchResults.length,
           processingTime: processingTime,
           n8nMetadata: metadata,
-          kbDetection: {
-            shouldUseKB: detectionResult.shouldUseKB,
-            confidence: detectionResult.confidence,
-            intent: detectionResult.queryIntent,
-            adaptiveThreshold: detectionResult.adaptiveThreshold,
-            reason: detectionResult.reason
-          },
-          debugInfo: {
-            n8nResponseType: Array.isArray(n8nResult) ? 'array' : typeof n8nResult,
-            n8nResponseKeys: Object.keys(responseData || {}),
-            responseFound: !!finalResponse && finalResponse !== 'I apologize, but I was unable to generate a response.'
-          }
+          kbScore: topScore
         }
       });
 
@@ -739,220 +728,23 @@ function calculateRelevance(title: string, content: string, tags: string[]): num
   return Math.min(score, 1.0);
 }
 
-// Dynamic Knowledge Base Detection Algorithm
-interface KBDetectionResult {
-  shouldUseKB: boolean;
-  confidence: number;
-  reason: string;
-  topDocuments: KnowledgeDocument[];
-  queryIntent: 'factual' | 'current' | 'tutorial' | 'comparison' | 'troubleshooting';
-  adaptiveThreshold: number;
-}
-
-// Analyze query intent and characteristics
-function analyzeQueryIntent(query: string): {
-  intent: KBDetectionResult['queryIntent'],
-  timeSignals: string[],
-  technicalSignals: string[],
-  isFactual: boolean
-} {
-  const lowerQuery = query.toLowerCase();
-  
-  // Time-sensitive indicators
-  const timeSignals = ['recent', 'latest', 'current', 'new', 'today', '2024', '2025', 'now', 'update', 'news'];
-  const foundTimeSignals = timeSignals.filter(signal => lowerQuery.includes(signal));
-  
-  // Technical knowledge indicators
-  const technicalSignals = ['how to', 'what is', 'explain', 'define', 'fundamentals', 'basics', 'tutorial', 'guide', 'overview', 'introduction'];
-  const foundTechnicalSignals = technicalSignals.filter(signal => lowerQuery.includes(signal));
-  
-  // Question patterns
-  const questionPatterns = ['how', 'what', 'why', 'when', 'where', 'which'];
-  const isFactual = questionPatterns.some(pattern => lowerQuery.startsWith(pattern));
-  
-  // Determine intent
-  let intent: KBDetectionResult['queryIntent'] = 'factual';
-  
-  if (foundTimeSignals.length > 0) {
-    intent = 'current';
-  } else if (foundTechnicalSignals.length > 0) {
-    intent = 'tutorial';
-  } else if (lowerQuery.includes('vs') || lowerQuery.includes('versus') || lowerQuery.includes('compare')) {
-    intent = 'comparison';
-  } else if (lowerQuery.includes('error') || lowerQuery.includes('problem') || lowerQuery.includes('fix') || lowerQuery.includes('troubleshoot')) {
-    intent = 'troubleshooting';
-  }
-  
-  return {
-    intent,
-    timeSignals: foundTimeSignals,
-    technicalSignals: foundTechnicalSignals,
-    isFactual
-  };
-}
-
-// Calculate adaptive threshold based on query characteristics
-function calculateAdaptiveThreshold(queryAnalysis: ReturnType<typeof analyzeQueryIntent>, queryLength: number): number {
-  let baseThreshold = 2.0; // Default threshold (matches score scale)
-  
-  // Adjust based on intent
-  switch (queryAnalysis.intent) {
-    case 'tutorial':
-    case 'factual':
-      baseThreshold = 1.5; // Lower threshold for educational content
-      break;
-    case 'current':
-      baseThreshold = 3.0; // Higher threshold for time-sensitive queries (but still reasonable)
-      break;
-    case 'comparison':
-      baseThreshold = 2.5; // Medium threshold for comparisons
-      break;
-    case 'troubleshooting':
-      baseThreshold = 2.8; // Higher threshold for specific problems
-      break;
-  }
-  
-  // Adjust based on time signals (but don't make it impossible)
-  if (queryAnalysis.timeSignals.length > 0) {
-    baseThreshold += 0.5; // Small increase for time-sensitive queries
-  }
-  
-  // Adjust based on query complexity
-  if (queryLength > 50) {
-    baseThreshold -= 0.3; // Lower threshold for complex queries
-  } else if (queryLength < 15) {
-    baseThreshold += 0.3; // Higher threshold for simple queries
-  }
-  
-  return Math.max(1.0, Math.min(5.0, baseThreshold)); // Clamp between 1.0-5.0 to match score scale
-}
-
-// Enhanced knowledge base detection with dynamic analysis
-async function detectKnowledgeBaseRelevance(query: string): Promise<KBDetectionResult> {
-  console.log(`[KB Detection] Analyzing query: "${query}"`);
-  
-  try {
-    // Analyze query characteristics
-    const queryAnalysis = analyzeQueryIntent(query);
-    const adaptiveThreshold = calculateAdaptiveThreshold(queryAnalysis, query.length);
-    
-    console.log(`[KB Detection] Intent: ${queryAnalysis.intent}, Adaptive threshold: ${adaptiveThreshold}`);
-    
-    // Search knowledge base
-    const documents = await loadKnowledgeBaseDocuments();
-    if (documents.length === 0) {
-      return {
-        shouldUseKB: false,
-        confidence: 0,
-        reason: 'No knowledge base documents available',
-        topDocuments: [],
-        queryIntent: queryAnalysis.intent,
-        adaptiveThreshold
-      };
-    }
-    
-    // Get search results with scores
-    const searchResults = await searchKnowledgeBase(query);
-    
-    if (searchResults.length === 0) {
-      return {
-        shouldUseKB: false,
-        confidence: 0,
-        reason: 'No relevant documents found in knowledge base',
-        topDocuments: [],
-        queryIntent: queryAnalysis.intent,
-        adaptiveThreshold
-      };
-    }
-    
-    // Calculate confidence metrics (adjusted for new score scale)
-    const topScore = searchResults[0].searchScore || 0;
-    const avgScore = searchResults.reduce((sum, doc) => sum + (doc.searchScore || 0), 0) / searchResults.length;
-    const scoreGap = searchResults.length > 1 ? topScore - (searchResults[1].searchScore || 0) : topScore;
-    
-    // Enhanced confidence calculation for new score scale
-    let confidence = (topScore / adaptiveThreshold) * 100; // Convert to percentage
-    
-    // Boost confidence if multiple high-scoring documents
-    if (searchResults.length >= 2 && avgScore > adaptiveThreshold * 0.7) {
-      confidence += 15; // Multiple relevant documents boost
-    }
-    
-    // Boost confidence if there's a clear winner
-    if (scoreGap > 1.0) {
-      confidence += 10; // Clear winner boost
-    }
-    
-    // Penalty for intent mismatch (reduced for current queries)
-    if (queryAnalysis.intent === 'current' && topScore < adaptiveThreshold * 0.8) {
-      confidence -= 10; // Reduced penalty for time-sensitive queries
-    }
-    
-    // Penalty for time signals (reduced)
-    if (queryAnalysis.timeSignals.length > 0) {
-      confidence -= 5; // Reduced penalty - knowledge base can still be useful
-    }
-    
-    // Determine if we should use KB (compare confidence percentage to 50%)
-    const shouldUseKB = confidence >= 50;
-    
-    // Generate detailed reason
-    let reason = '';
-    if (shouldUseKB) {
-      reason = `High relevance: confidence ${confidence.toFixed(1)}% >= 50% (intent: ${queryAnalysis.intent})`;
-      if (queryAnalysis.timeSignals.length > 0) {
-        reason += ` - Note: Query contains time-sensitive terms`;
-      }
-    } else {
-      reason = `Low relevance: confidence ${confidence.toFixed(1)}% < 50% (intent: ${queryAnalysis.intent})`;
-      if (queryAnalysis.timeSignals.length > 0) {
-        reason += ` - Time-sensitive query needs web search`;
-      }
-    }
-    
-    console.log(`[KB Detection] ${reason}`);
-    console.log(`[KB Detection] Top documents: ${searchResults.slice(0, 3).map(d => `${d.title} (${d.searchScore?.toFixed(1)})`).join(', ')}`);
-    
-    return {
-      shouldUseKB,
-      confidence,
-      reason,
-      topDocuments: searchResults.slice(0, 3),
-      queryIntent: queryAnalysis.intent,
-      adaptiveThreshold
-    };
-    
-  } catch (error) {
-    console.error('[KB Detection] Error:', error);
-    return {
-      shouldUseKB: false,
-      confidence: 0,
-      reason: `Detection error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      topDocuments: [],
-      queryIntent: 'factual',
-      adaptiveThreshold: 50
-    };
-  }
-}
-
-// Search documents using dynamic algorithm
+// Simple search function
 async function searchKnowledgeBase(query: string): Promise<KnowledgeDocument[]> {
   try {
     // Initialize search engine if needed
     await initializeDynamicSearch();
 
     if (!dynamicSearchEngine) {
-      console.error('[Dynamic Search] Failed to initialize search engine');
+      console.error('[Search] Failed to initialize search engine');
       return [];
     }
 
-    // Perform dynamic search
+    // Perform search
     const results = await dynamicSearchEngine.search(query, 5);
-
     return results;
 
   } catch (error) {
-    console.error('[Dynamic Search] Error searching knowledge base:', error);
+    console.error('[Search] Error searching knowledge base:', error);
     return [];
   }
 }
