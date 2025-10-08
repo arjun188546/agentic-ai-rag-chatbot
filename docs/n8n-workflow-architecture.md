@@ -129,18 +129,116 @@ Process the web search results and provide a comprehensive answer.
 
 **Response Structure**:
 ```json
-{
-  "response": "LLM generated answer",
-  "steps": ["Query analyzed", "LLM routing decision", "Processing completed"],
-  "toolCalls": ["llm_decision", "kb_summarize|web_search", "llm_processing"],
-  "latency": 2500,
-  "success": true,
-  "metadata": {
-    "processingPath": "kb_summarize|web_search",
-    "kbScore": 85,
-    "llmReasoning": "KB score 85 exceeds threshold..."
+// 📋 Enhanced Response Formatter - Fixed for New Routing System
+const input = $json;
+
+// Try different possible node names for OpenAI response
+let openaiResponse = $input.first().json.message.content;
+
+try {
+  // Try common node names
+  const possibleNodes = ['OpenAI Chat Model', 'OpenAI', 'OpenAI Chat', 'Chat Model'];
+  
+  for (const nodeName of possibleNodes) {
+    try {
+      const nodeData = $(nodeName).first()?.json;
+      if (nodeData?.choices?.[0]?.message?.content) {
+        openaiResponse = nodeData.choices[0].message.content;
+        console.log(`[Response Formatter] Found OpenAI response from node: ${nodeName}`);
+        break;
+      }
+    } catch (e) {
+      // Continue trying other node names
+    }
   }
+  
+  // If still no response, try getting from input
+  if (openaiResponse === 'Sorry, I could not generate a response.' && input.aiResponse) {
+    openaiResponse = input.aiResponse;
+  }
+  
+} catch (error) {
+  console.error('[Response Formatter] Error getting OpenAI response:', error);
 }
+
+console.log(`[Response Formatter] Processing response: ${openaiResponse.substring(0, 80)}...`);
+
+// Calculate processing time
+const processingTime = input.startTime ? (Date.now() - input.startTime) : 100;
+
+// Determine what tools/methods were actually used
+const toolCalls = [];
+if (input.needsWebSearch && input.webSearchResults && input.webSearchResults.length > 0) {
+  toolCalls.push('web_search');
+} else if (input.knowledgeContext && input.knowledgeContext.length > 0) {
+  toolCalls.push('knowledge_base_search');
+}
+toolCalls.push('llm_reasoning');
+
+// Build comprehensive final response
+const finalResponse = {
+  response: openaiResponse,
+  
+  // Enhanced processing steps
+  steps: [
+    ...(input.processingSteps || [
+      'Message received in n8n',
+      `Confidence: ${input.confidenceScore?.toFixed(1) || 0}%`,
+      `Routing: ${input.needsWebSearch ? 'Web Search' : 'Knowledge Base'}`
+    ]),
+    '🤖 AI response generated',
+    '📋 Response formatted and ready'
+  ],
+  
+  // Tools actually used
+  toolCalls: toolCalls,
+  
+  // Performance metrics
+  latency: processingTime,
+  success: true,
+  
+  // Comprehensive metadata
+  metadata: {
+    // Session info
+    sessionId: input.sessionId || 'unknown',
+    timestamp: new Date().toISOString(),
+    processingTime: processingTime,
+    
+    // Routing information
+    routingDecision: input.searchMetadata?.routingDecision || (input.needsWebSearch ? 'web_search' : 'knowledge_base'),
+    confidenceScore: input.confidenceScore || 0,
+    contextSource: input.contextSource || (input.needsWebSearch ? 'web_search' : 'knowledge_base'),
+    
+    // Content usage stats
+    documentsUsed: input.needsWebSearch ? 0 : (input.knowledgeContext?.length || 0),
+    webResultsUsed: input.needsWebSearch ? (input.webSearchResults?.length || 0) : 0,
+    
+    // Original search metadata from frontend
+    frontendSearchStats: input.searchMetadata || {},
+    
+    // Response quality indicators
+    responseLength: openaiResponse.length,
+    estimatedReadTime: Math.ceil(openaiResponse.split(' ').length / 200),
+    
+    // Performance classification
+    performanceClass: processingTime < 1000 ? 'fast' : 
+                     processingTime < 3000 ? 'normal' : 'slow',
+    
+    // Processing location
+    processingLocation: 'n8n_enhanced_workflow'
+  }
+};
+
+// Enhanced logging
+console.log(`[Response Formatter] Summary:`);
+console.log(`  - Routing: ${finalResponse.metadata.routingDecision}`);
+console.log(`  - Confidence: ${finalResponse.metadata.confidenceScore}%`);
+console.log(`  - Context: ${finalResponse.metadata.contextSource}`);
+console.log(`  - Tools: ${finalResponse.toolCalls.join(', ')}`);
+console.log(`  - Performance: ${finalResponse.metadata.performanceClass} (${processingTime}ms)`);
+console.log(`  - Response length: ${openaiResponse.length} chars`);
+
+return [finalResponse];
 ```
 
 ## Data Flow Architecture
